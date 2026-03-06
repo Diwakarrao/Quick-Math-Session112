@@ -24,10 +24,11 @@ import { AppCard } from "@/components/AppCard";
 import { PrimaryButton } from "@/components/PrimaryButton";
 import { useApp } from "@/context/AppContext";
 import type { AppSettings } from "@/lib/storage";
+import { CARD_DURATION_OPTIONS } from "@/lib/storage";
 import type { Language } from "@/constants/strings";
 import { Ionicons } from "@expo/vector-icons";
 
-type PickerMode = "language" | "cardsBeforePopup" | null;
+type PickerMode = "language" | "cardDuration" | null;
 
 const LANGUAGES: { key: Language; label: string }[] = [
   { key: "en", label: "English" },
@@ -247,6 +248,22 @@ export default function SettingsScreen() {
         </AppCard>
 
         <AppCard style={{ gap: 4 }}>
+          <Text style={styles.sectionTitle}>Card Duration</Text>
+          <Pressable
+            onPress={() => setPickerMode("cardDuration")}
+            style={styles.langPickRow}
+          >
+            <Text style={styles.langPickLabel}>Answer Time per Card</Text>
+            <View style={styles.langPickRight}>
+              <Text style={styles.langPickValue}>
+                {CARD_DURATION_OPTIONS.find((o) => o.ms === draft.cardDurationMs)?.label ?? "15s"}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={Colors.accent} />
+            </View>
+          </Pressable>
+        </AppCard>
+
+        <AppCard style={{ gap: 4 }}>
           <Text style={styles.sectionTitle}>{strings.language}</Text>
           <Pressable
             onPress={() => setPickerMode("language")}
@@ -270,29 +287,56 @@ export default function SettingsScreen() {
         <Pressable style={styles.pickerOverlay} onPress={() => setPickerMode(null)}>
           <View style={styles.pickerSheet}>
             <View style={styles.pickerHandle} />
-            <Text style={styles.pickerTitle}>{strings.language}</Text>
-            <FlatList
-              data={LANGUAGES}
-              keyExtractor={(item) => item.key}
-              scrollEnabled={false}
-              renderItem={({ item }) => (
-                <Pressable
-                  style={[styles.pickerItem, draft.language === item.key && styles.pickerItemSelected]}
-                  onPress={() => {
-                    patch("language", item.key);
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setPickerMode(null);
-                  }}
-                >
-                  <Text style={[styles.pickerItemText, draft.language === item.key && styles.pickerItemTextSelected]}>
-                    {item.label}
-                  </Text>
-                  {draft.language === item.key && (
-                    <Ionicons name="checkmark" size={20} color={Colors.accent} />
-                  )}
-                </Pressable>
-              )}
-            />
+            <Text style={styles.pickerTitle}>
+              {pickerMode === "cardDuration" ? "Answer Time per Card" : strings.language}
+            </Text>
+            {pickerMode === "cardDuration" ? (
+              <FlatList
+                data={CARD_DURATION_OPTIONS}
+                keyExtractor={(item) => item.ms.toString()}
+                scrollEnabled={false}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={[styles.pickerItem, draft.cardDurationMs === item.ms && styles.pickerItemSelected]}
+                    onPress={() => {
+                      patch("cardDurationMs", item.ms);
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setPickerMode(null);
+                    }}
+                  >
+                    <Text style={[styles.pickerItemText, draft.cardDurationMs === item.ms && styles.pickerItemTextSelected]}>
+                      {item.label}
+                    </Text>
+                    {draft.cardDurationMs === item.ms && (
+                      <Ionicons name="checkmark" size={20} color={Colors.accent} />
+                    )}
+                  </Pressable>
+                )}
+              />
+            ) : (
+              <FlatList
+                data={LANGUAGES}
+                keyExtractor={(item) => item.key}
+                scrollEnabled={false}
+                renderItem={({ item }) => (
+                  <Pressable
+                    style={[styles.pickerItem, draft.language === item.key && styles.pickerItemSelected]}
+                    onPress={() => {
+                      patch("language", item.key);
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setPickerMode(null);
+                    }}
+                  >
+                    <Text style={[styles.pickerItemText, draft.language === item.key && styles.pickerItemTextSelected]}>
+                      {item.label}
+                    </Text>
+                    {draft.language === item.key && (
+                      <Ionicons name="checkmark" size={20} color={Colors.accent} />
+                    )}
+                  </Pressable>
+                )}
+              />
+            )}
           </View>
         </Pressable>
       </Modal>

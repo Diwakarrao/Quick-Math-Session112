@@ -45,12 +45,20 @@ export default function PermissionScreen() {
     if (Platform.OS === "android") {
       await Linking.openSettings();
     }
-    await updateSettings({ onboardingDone: true, overlayPermissionDeclined: false });
+    await updateSettings({
+      onboardingDone: true,
+      overlayPermissionDeclined: false,
+      freeTrialStartedAt: Date.now(),
+    });
     router.replace("/(main)/home");
   };
 
   const handleNotNow = async () => {
-    await updateSettings({ onboardingDone: true, overlayPermissionDeclined: true });
+    await updateSettings({
+      onboardingDone: true,
+      overlayPermissionDeclined: true,
+      freeTrialStartedAt: Date.now(),
+    });
     router.replace("/(main)/home");
   };
 

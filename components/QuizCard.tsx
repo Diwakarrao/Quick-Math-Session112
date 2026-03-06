@@ -32,6 +32,7 @@ interface QuizCardProps {
   answerIndex: number | null;
   timerComplete: boolean;
   onTimerComplete: () => void;
+  totalMs?: number;
 }
 
 export function QuizCard({
@@ -43,8 +44,9 @@ export function QuizCard({
   answerIndex,
   timerComplete,
   onTimerComplete,
+  totalMs = TOTAL_MS,
 }: QuizCardProps) {
-  const [remainingMs, setRemainingMs] = useState(TOTAL_MS);
+  const [remainingMs, setRemainingMs] = useState(totalMs);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startRef = useRef<number>(Date.now());
   const timerDoneRef = useRef(false);
@@ -54,7 +56,7 @@ export function QuizCard({
 
   useEffect(() => {
     if (visible && card) {
-      setRemainingMs(TOTAL_MS);
+      setRemainingMs(totalMs);
       timerDoneRef.current = false;
       startRef.current = Date.now();
 
@@ -63,7 +65,7 @@ export function QuizCard({
 
       intervalRef.current = setInterval(() => {
         const elapsed = Date.now() - startRef.current;
-        const remaining = Math.max(0, TOTAL_MS - elapsed);
+        const remaining = Math.max(0, totalMs - elapsed);
         setRemainingMs(remaining);
         if (remaining <= 0 && !timerDoneRef.current) {
           timerDoneRef.current = true;
@@ -135,7 +137,7 @@ export function QuizCard({
               <Text style={styles.brandName}>QUICK MATH</Text>
             </View>
             <CountdownRing
-              totalMs={TOTAL_MS}
+              totalMs={totalMs}
               remainingMs={remainingMs}
               onComplete={() => {}}
             />
