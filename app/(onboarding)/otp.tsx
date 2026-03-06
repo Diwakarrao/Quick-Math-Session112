@@ -14,7 +14,6 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withTiming,
-  withSequence,
 } from "react-native-reanimated";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
@@ -25,9 +24,16 @@ import { OutlineButton } from "@/components/OutlineButton";
 import { useApp } from "@/context/AppContext";
 import { Ionicons } from "@expo/vector-icons";
 
+interface OtpScreenProps {
+  isMandatory?: boolean;
+}
+
 export default function OtpScreen() {
   const insets = useSafeAreaInsets();
-  const { strings, updateSettings } = useApp();
+  const { strings, updateSettings, settings } = useApp();
+  const isMandatory = settings.freeTrialStartedAt !== null &&
+    (Date.now() - (settings.freeTrialStartedAt ?? 0)) >= 3 * 24 * 60 * 60 * 1000;
+
   const [phone, setPhone] = useState("");
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
@@ -94,8 +100,18 @@ export default function OtpScreen() {
     successOpacity.value = withTiming(1, { duration: 300 });
     await updateSettings({ userVerified: true });
     setTimeout(() => {
-      router.push("/(onboarding)/privacy");
+      if (settings.onboardingDone) {
+        router.replace("/(main)/home");
+      } else {
+        router.push("/(onboarding)/privacy");
+      }
     }, 1200);
+  };
+
+  const handleSkip = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await updateSettings({ otpSkippedAt: Date.now() });
+    router.push("/(onboarding)/privacy");
   };
 
   const successStyle = useAnimatedStyle(() => ({
@@ -113,17 +129,31 @@ export default function OtpScreen() {
         { paddingTop: topInset + 16, paddingBottom: bottomInset + 24 },
       ]}
     >
-      <Pressable onPress={() => router.back()} style={styles.back}>
-        <Ionicons name="arrow-back" size={22} color={Colors.ink} />
-      </Pressable>
+      {!isMandatory && (
+        <Pressable onPress={() => router.back()} style={styles.back}>
+          <Ionicons name="arrow-back" size={22} color={Colors.ink} />
+        </Pressable>
+      )}
 
       <View style={styles.titleWrap}>
-        <Text style={styles.title}>Verify your{"\n"}number</Text>
+        <Text style={styles.title}>
+          {isMandatory ? "Verification Required" : "Verify your\nnumber"}
+        </Text>
         <Text style={styles.subtitle}>
-          {otpSent
+          {isMandatory
+            ? "Your free trial has ended. Verify your number to continue."
+            : otpSent
             ? `OTP sent to +91 ${phone}`
             : "Enter your +91 mobile number"}
         </Text>
+        {isMandatory && (
+          <View style={styles.mandatoryBadge}>
+            <Ionicons name="lock-closed" size={13} color={Colors.danger} />
+            <Text style={styles.mandatoryText}>
+              Free trial ended — verification required
+            </Text>
+          </View>
+        )}
       </View>
 
       {!otpSent ? (
@@ -150,6 +180,12 @@ export default function OtpScreen() {
             loading={loading}
             style={{ width: "100%" }}
           />
+          {!isMandatory && (
+            <Pressable onPress={handleSkip} style={styles.skipRow}>
+              <Text style={styles.skipText}>Skip for now</Text>
+              <Text style={styles.skipNote}> (no premium features after trial)</Text>
+            </Pressable>
+          )}
         </View>
       ) : verified ? (
         <Animated.View style={[styles.successWrap, successStyle]}>
@@ -164,7 +200,7 @@ export default function OtpScreen() {
             {otp.map((digit, idx) => (
               <TextInput
                 key={idx}
-                ref={(r) => (refs.current[idx] = r)}
+                ref={(r) => { refs.current[idx] = r; }}
                 style={[styles.otpBox, digit && styles.otpBoxFilled]}
                 keyboardType="number-pad"
                 maxLength={1}
@@ -199,7 +235,12 @@ export default function OtpScreen() {
 
           <OutlineButton
             label={strings.whatsappFallback}
-            onPress={() => Alert.alert("WhatsApp OTP", "WhatsApp fallback requires Firebase Cloud Functions setup.")}
+            onPress={() =>
+              Alert.alert(
+                "WhatsApp OTP",
+                "WhatsApp fallback requires Firebase setup."
+              )
+            }
             style={{ width: "100%" }}
           />
         </View>
@@ -213,7 +254,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
     paddingHorizontal: 24,
-    gap: 32,
+    gap: 28,
   },
   back: {
     width: 40,
@@ -233,6 +274,23 @@ const styles = StyleSheet.create({
     fontFamily: "Nunito_400Regular",
     fontSize: 15,
     color: Colors.secondary,
+    lineHeight: 22,
+  },
+  mandatoryBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FEE2E2",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    alignSelf: "flex-start",
+    marginTop: 4,
+  },
+  mandatoryText: {
+    fontFamily: "Nunito_700Bold",
+    fontSize: 12,
+    color: Colors.danger,
   },
   phoneWrap: { gap: 16 },
   phoneRow: {
@@ -264,6 +322,24 @@ const styles = StyleSheet.create({
     fontFamily: "Nunito_700Bold",
     fontSize: 18,
     color: Colors.ink,
+  },
+  skipRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 4,
+    flexWrap: "wrap",
+  },
+  skipText: {
+    fontFamily: "Nunito_700Bold",
+    fontSize: 14,
+    color: Colors.accent,
+    textDecorationLine: "underline",
+  },
+  skipNote: {
+    fontFamily: "Nunito_400Regular",
+    fontSize: 13,
+    color: Colors.secondary,
   },
   otpSection: { gap: 20 },
   otpRow: {

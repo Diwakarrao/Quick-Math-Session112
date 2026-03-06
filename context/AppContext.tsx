@@ -8,14 +8,16 @@ import React, {
   useRef,
   ReactNode,
 } from "react";
-import { AppState } from "react-native";
 import {
   AppSettings,
   loadSettings,
   saveSettings,
   isPremium,
-  DURATION_OPTIONS,
-  FREQUENCY_OPTIONS,
+  isInFreeTrial,
+  freeTrialEnded,
+  freeTrialDaysLeft,
+  mustVerifyOtp,
+  hasAnyPremiumAccess,
 } from "@/lib/storage";
 import { generateQuizCard, adaptDifficulty, QuizCard, Difficulty } from "@/lib/math";
 import { getStrings } from "@/constants/strings";
@@ -32,6 +34,10 @@ interface AppContextValue {
   updateSettings: (partial: Partial<AppSettings>) => Promise<void>;
   loaded: boolean;
   isPremiumUser: boolean;
+  hasAnyPremium: boolean;
+  inFreeTrial: boolean;
+  trialDaysLeft: number;
+  needsOtp: boolean;
   strings: ReturnType<typeof getStrings>;
 
   session: SessionState;
@@ -40,35 +46,42 @@ interface AppContextValue {
 
   currentCard: QuizCard | null;
   cardVisible: boolean;
-  cardTimerMs: number;
   answerIndex: number | null;
   answerLockedAt: number | null;
   timerComplete: boolean;
   markTimerComplete: () => void;
   handleAnswer: (idx: number) => void;
   dismissCard: () => void;
-  nextCard: () => void;
+
+  funPopupVisible: boolean;
+  funPopupType: "dots" | "ring";
+  dismissFunPopup: () => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
 
+const DEFAULT_SETTINGS: AppSettings = {
+  cardSizeFull: false,
+  strictMode: false,
+  audioCue: true,
+  vibration: true,
+  funPopups: false,
+  cardsBeforePopup: 3,
+  durationMs: 1200000,
+  frequencyMs: 60000,
+  cardDurationMs: 15000,
+  language: "en",
+  premiumToken: "",
+  onboardingDone: false,
+  userVerified: false,
+  overlayPermissionDeclined: false,
+  currentDifficulty: "easy",
+  freeTrialStartedAt: null,
+  otpSkippedAt: null,
+};
+
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<AppSettings>({
-    cardSizeFull: false,
-    strictMode: false,
-    audioCue: true,
-    vibration: true,
-    funPopups: false,
-    cardsBeforePopup: 3,
-    durationMs: 1200000,
-    frequencyMs: 60000,
-    language: "en",
-    premiumToken: "",
-    onboardingDone: false,
-    userVerified: false,
-    overlayPermissionDeclined: false,
-    currentDifficulty: "easy",
-  });
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [loaded, setLoaded] = useState(false);
 
   const [session, setSession] = useState<SessionState>({
@@ -80,12 +93,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const [currentCard, setCurrentCard] = useState<QuizCard | null>(null);
   const [cardVisible, setCardVisible] = useState(false);
-  const [cardTimerMs, setCardTimerMs] = useState(15000);
   const [answerIndex, setAnswerIndex] = useState<number | null>(null);
   const [answerLockedAt, setAnswerLockedAt] = useState<number | null>(null);
   const [timerComplete, setTimerComplete] = useState(false);
   const [cardShownAt, setCardShownAt] = useState<number | null>(null);
-  const timerCompleteRef = useRef(false);
+
+  const [funPopupVisible, setFunPopupVisible] = useState(false);
+  const [funPopupType, setFunPopupType] = useState<"dots" | "ring">("dots");
 
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -93,9 +107,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
 
+  const timerCompleteRef = useRef(false);
   const cardIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firstCardTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const funPopupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const popupCountRef = useRef(0);
 
   useEffect(() => {
     loadSettings().then((s) => {
@@ -113,14 +130,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const showNextCard = useCallback((diff: Difficulty) => {
+    const s = settingsRef.current;
     const card = generateQuizCard(diff);
     setCurrentCard(card);
     setCardVisible(true);
-    setCardTimerMs(15000);
     setAnswerIndex(null);
     setAnswerLockedAt(null);
+    timerCompleteRef.current = false;
     setTimerComplete(false);
     setCardShownAt(Date.now());
+
+    // Check if we should show a fun popup after this card
+    if (s.funPopups) {
+      popupCountRef.current += 1;
+      if (popupCountRef.current >= s.cardsBeforePopup) {
+        popupCountRef.current = 0;
+        // Show fun popup 500ms after the card would be dismissed
+        const totalCardTime = s.cardDurationMs + 2000;
+        funPopupTimerRef.current = setTimeout(() => {
+          if (!cardVisible) {
+            setFunPopupType(Math.random() > 0.5 ? "dots" : "ring");
+            setFunPopupVisible(true);
+          }
+        }, totalCardTime);
+      }
+    }
   }, []);
 
   const startSession = useCallback(() => {
@@ -131,22 +165,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       cardsShown: 0,
       cardsSincePopup: 0,
     });
+    popupCountRef.current = 0;
 
     firstCardTimeoutRef.current = setTimeout(() => {
       if (!sessionRef.current.active) return;
       const diff = settingsRef.current.currentDifficulty;
       showNextCard(diff);
-      setSession((prev) => ({ ...prev, cardsShown: prev.cardsShown + 1, cardsSincePopup: prev.cardsSincePopup + 1 }));
+      setSession((prev) => ({ ...prev, cardsShown: prev.cardsShown + 1 }));
 
       cardIntervalRef.current = setInterval(() => {
         if (!sessionRef.current.active) return;
         const currentDiff = settingsRef.current.currentDifficulty;
         showNextCard(currentDiff);
-        setSession((prev) => ({
-          ...prev,
-          cardsShown: prev.cardsShown + 1,
-          cardsSincePopup: prev.cardsSincePopup + 1,
-        }));
+        setSession((prev) => ({ ...prev, cardsShown: prev.cardsShown + 1 }));
       }, Math.max(settingsRef.current.frequencyMs, 30000));
     }, 45000);
 
@@ -159,14 +190,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (cardIntervalRef.current) clearInterval(cardIntervalRef.current);
     if (sessionTimeoutRef.current) clearTimeout(sessionTimeoutRef.current);
     if (firstCardTimeoutRef.current) clearTimeout(firstCardTimeoutRef.current);
+    if (funPopupTimerRef.current) clearTimeout(funPopupTimerRef.current);
     setSession({ active: false, startedAt: null, cardsShown: 0, cardsSincePopup: 0 });
     setCardVisible(false);
     setCurrentCard(null);
+    setFunPopupVisible(false);
   }, []);
 
   const stopSession = useCallback(() => {
     stopSessionInternal();
   }, [stopSessionInternal]);
+
+  const markTimerComplete = useCallback(() => {
+    timerCompleteRef.current = true;
+    setTimerComplete(true);
+  }, []);
 
   const handleAnswer = useCallback((idx: number) => {
     if (answerIndex !== null) return;
@@ -174,16 +212,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setAnswerLockedAt(Date.now());
   }, [answerIndex]);
 
-  const markTimerComplete = useCallback(() => {
-    timerCompleteRef.current = true;
-    setTimerComplete(true);
-  }, []);
-
   const dismissCard = useCallback(() => {
     if (!timerCompleteRef.current) return;
-    const responseMs = answerLockedAt && cardShownAt ? answerLockedAt - cardShownAt : 15000;
+    const responseMs = answerLockedAt && cardShownAt ? answerLockedAt - cardShownAt : settingsRef.current.cardDurationMs;
     const wasCorrect = answerIndex === currentCard?.correctIndex;
-    const newDiff = adaptDifficulty(settings.currentDifficulty, responseMs, wasCorrect);
+    const newDiff = adaptDifficulty(settingsRef.current.currentDifficulty, responseMs, wasCorrect);
     updateSettings({ currentDifficulty: newDiff });
     timerCompleteRef.current = false;
     setTimerComplete(false);
@@ -191,13 +224,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setCurrentCard(null);
     setAnswerIndex(null);
     setAnswerLockedAt(null);
-  }, [answerLockedAt, cardShownAt, answerIndex, currentCard, settings.currentDifficulty, updateSettings]);
+  }, [answerLockedAt, cardShownAt, answerIndex, currentCard, updateSettings]);
 
-  const nextCard = useCallback(() => {
-    dismissCard();
-  }, [dismissCard]);
+  const dismissFunPopup = useCallback(() => {
+    setFunPopupVisible(false);
+  }, []);
 
   const isPremiumUser = isPremium(settings.premiumToken);
+  const inFreeTrial = isInFreeTrial(settings);
+  const trialDaysLeft = freeTrialDaysLeft(settings);
+  const hasAnyPremium = hasAnyPremiumAccess(settings);
+  const needsOtp = mustVerifyOtp(settings);
   const strings = getStrings(settings.language);
 
   const value = useMemo<AppContextValue>(
@@ -206,26 +243,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateSettings,
       loaded,
       isPremiumUser,
+      hasAnyPremium,
+      inFreeTrial,
+      trialDaysLeft,
+      needsOtp,
       strings,
       session,
       startSession,
       stopSession,
       currentCard,
       cardVisible,
-      cardTimerMs,
       answerIndex,
       answerLockedAt,
       timerComplete,
       markTimerComplete,
       handleAnswer,
       dismissCard,
-      nextCard,
+      funPopupVisible,
+      funPopupType,
+      dismissFunPopup,
     }),
     [
-      settings, updateSettings, loaded, isPremiumUser, strings,
+      settings, updateSettings, loaded,
+      isPremiumUser, hasAnyPremium, inFreeTrial, trialDaysLeft, needsOtp, strings,
       session, startSession, stopSession,
-      currentCard, cardVisible, cardTimerMs, answerIndex, answerLockedAt,
-      timerComplete, markTimerComplete, handleAnswer, dismissCard, nextCard,
+      currentCard, cardVisible, answerIndex, answerLockedAt,
+      timerComplete, markTimerComplete, handleAnswer, dismissCard,
+      funPopupVisible, funPopupType, dismissFunPopup,
     ]
   );
 

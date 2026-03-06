@@ -56,11 +56,14 @@ constants/
 
 ## Key Features
 - **Onboarding**: Language → OTP → Privacy → Overlay Permission (once only)
+- **Free Trial**: 3-day trial started at onboarding completion; full premium access (strict mode) during trial
+- **OTP Skip**: Users can skip OTP once; grace period 1 day, then mandatory if trial ended
 - **Math Engine**: +/−/×/÷ across Easy/Medium/Hard with adaptive difficulty
-- **Session Timer**: Slide to start, first card at 45s, then every N minutes
-- **Quiz Cards**: 15s countdown, answer locking, reveal at timer complete
-- **Settings**: Session duration (5–60 min), frequency (30s–5 min), toggles
-- **Premium**: Strict mode gated behind subscription (UPI payment deep link)
+- **Session Control**: Double-tap the QM logo badge in header to start/stop session
+- **Quiz Cards**: Configurable duration (5/10/15/20/25s), answer locking, reveal at timer complete
+- **Fun Popups**: Optional full-screen image overlays (dots/ring) shown between cards
+- **Settings**: Session duration (5–60 min), frequency (30s–5 min), card duration, display mode, language
+- **Premium**: Strict mode gated behind subscription; free trial grants access for 3 days
 - **i18n**: English, Telugu, Hindi strings
 
 ## Workflows
